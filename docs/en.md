@@ -1,61 +1,153 @@
-# Demo Devices Template
+# Sky Q
 
-This is the user documentation of the integration. Gladys re-hosts this file
-and shows a permanent **Documentation** link to it in the Configuration screen
-(in the user's language, with English as the fallback) — it is when
-configuring that the user needs it most. Keep the short onboarding hints in
-the `section` blocks of the manifest `config_schema`; put the long
-step-by-step (screenshots, troubleshooting…) here.
+Control your **Sky Q** set-top boxes from Gladys, on your local network,
+without any cloud: power state, wake-up and standby, channel, play, pause,
+the other remote keys, the channel or recording being played and the share of
+the recordings disk in use. The integration uses the local ports of the box
+(REST 9006, UPnP/SOAP 49153, remote control 49160), the ones the Sky apps and
+the community libraries use.
+
+> **Unofficial integration, not affiliated with Sky.** This first milestone
+> was written and tested against simulated boxes: it has **never been tested
+> with a real box**. Your feedback is welcome.
+
+## Supported boxes
+
+- Sky Q main boxes (UK, Ireland, Italy, Germany).
+- Sky Q Mini boxes and Sky Glass TVs (types `IPSETTOPBOX` and `TV`) are read
+  (power state, disk) but take no remote key, and their playback is not read,
+  as in the reference library.
+
+## Prepare the box
+
+Give the box a **fixed IP address** in your router (reserved DHCP lease). The
+box must be on the same network as Gladys. Nothing to enable on the box.
+
+## Add a box
+
+- **By its address**: type the IP address in "IP addresses of the boxes"
+  (several addresses separated by commas) and save.
+- **By the search**: use **Find the boxes**. Gladys searches the network
+  (SSDP, target `urn:schemas-nds-com:device:SkyControl:2`) for the
+  integration; a network blocking multicast may hide the box: type its
+  address then.
+
+The box appears in the integration's **Discovery** tab: create it. Its states
+come with the next read (at most one refresh interval later).
 
 ## What you get
 
-Six demo devices show up after installation: a weather station (real data
-from Open-Meteo), a switch, a dimmable light, a smart plug with power
-metering, a motion sensor and a camera.
+| Feature              | Detail                                                                                                          |
+| -------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Power                | Read only: 1 on, 0 in standby or not answering                                                                  |
+| Reachable            | Read only: 1 the box answers on the network (on or in standby)                                                  |
+| Wake up              | Button: "Home" then "Dismiss", sent only when the box was just read in standby                                  |
+| Standby              | Button: the power key, sent only when the box was just read on                                                  |
+| Channel              | Read while live TV is shown; setting it types the digits of the number, 300 ms apart                            |
+| Buttons              | Play, pause, stop, record, rewind, fast forward, channel up/down, arrows, select, back, Sky, TV guide, info     |
+| Remote key           | Dropdown of every key of the remote (colours, digits, text, help, Box Office...), the raw power toggle included |
+| Channel name         | Read only, `-` when no live channel is shown                                                                    |
+| Recording played     | Read only: the title of the recording played, `-` otherwise                                                     |
+| Playback             | Read only: playing, paused or idle                                                                              |
+| Recordings disk used | Read only, in percent, read every 10 minutes                                                                    |
+
+There is no switch: wake-up and standby are two push buttons, so an
+"everything off" scene or a voice assistant cannot turn a box on or off by
+mistake. There is no volume: the box has none the network can read or set.
+The programme guide (EPG) is not read: it is online only, and this
+integration stays on your local network.
+
+## How a command is sent
+
+Commands to one box are sent one after the other; each gets 3.5 s from the
+moment Gladys asks, the wait for the previous ones included. Before any key,
+the integration reads the serial number at the box's address: a key is sent
+only after the box's own serial number was read there (a box replaced, or
+moved by DHCP, gets no key at an address where another box answers).
+
+- **Wake up**: the power state is read; in standby, "Home" then "Dismiss"
+  are sent (the way the Home Assistant integration wakes a box: these keys
+  are not a toggle). Already on: nothing is sent.
+- **Standby**: the power state is read; on, the power key is sent. Already in
+  standby: nothing is sent. The power key is a toggle, so it is sent only on
+  a state read just before.
+- Standby and wake-up send **nothing** ("nothing sent" in the logs) when: the
+  address of the box is unknown, the box does not answer, its serial number
+  cannot be read or is another box's, its power state cannot be read, it is a
+  Mini box or a Sky Glass TV, its remote port refuses the connection, or the
+  3.5 s ran out first.
+- The protocol of the remote has no acknowledgement: a key that left is
+  "sent, without confirmation". The box is read again 5 s after a wake-up, a
+  standby, a channel, play, pause, stop or a channel key (and 20 s after a
+  wake-up or a standby). A wake-up or standby that did not
+  change the state after 20 s is written to the logs; it is not sent again by
+  itself (a second toggle could undo the first).
+- A channel is typed digit by digit. When the channel list of the box is
+  known, a number that is not in it is refused. A number whose digits cannot
+  all be typed in the time left is not started.
+
+The **Remote key** dropdown with the value **Power** sends the raw power
+toggle without reading the state: a workaround if the state read is wrong.
+
+## The User-Agent "SKYPLUS_skyplus"
+
+To find its SkyPlay service, a box publishes up to 50 description files on
+its UPnP port. Many boxes answer these files only to the User-Agent of their
+own software, `SKYPLUS_skyplus`, which the reference library sends. With the
+explicit agreement of the maintainer of these integrations, this integration
+may send it, under these rules:
+
+- each description file is first asked with this integration's own
+  User-Agent (`gladys-sky-q`);
+- `SKYPLUS_skyplus` is sent for a file only after that file was refused with
+  the own User-Agent (an answer other than 200 and 404, or no answer), or,
+  when not one file answered the own User-Agent, for the files not asked so
+  yet;
+- it goes only to the box's own address, only on its UPnP port (49153), only
+  for these description files: the REST requests, the SOAP requests and the
+  remote keys carry the integration's own User-Agent or none;
+- once a User-Agent got a description file from a box, the other is not tried again
+  for that box until the integration restarts or the box changes address.
+
+No other imitation of an application is used, and the online services of Sky
+(guide, images) are not contacted.
 
 ## Configuration
 
-1. Open the **Configuration** tab of the integration.
-2. Set the **latitude** and **longitude** the demo weather station should
-   observe (they default to Paris), and pick your temperature unit.
-   The **refresh interval** sets how often the weather station and the
-   plug's power are read: every 5 minutes by default, every minute at most.
-3. Save: the devices appear in the **Discovery** tab, ready to be added.
+| Field                     | Detail                                                  |
+| ------------------------- | ------------------------------------------------------- |
+| IP addresses of the boxes | Separated by commas; boxes found by the search are kept |
+| Refresh interval (s)      | 5 to 300, 15 by default: how often the boxes are read   |
 
-The **Prefer the local connection** toggle drives the demo plug: it reports
-the channel it actually uses as a badge (local or cloud), with an orange dot
-when it runs degraded (local refused, cloud fallback).
+An invalid address is ignored; the status of the integration says how many
+were ignored (without showing them back).
 
-## Actions
+**Check the boxes** shows, for each known box, what the last read found and
+how long ago. It starts a read only when one is due: never sooner than the
+refresh interval.
 
-- **Test the weather provider** — performs a live request to Open-Meteo and
-  shows the current temperature and humidity under the button.
-- **Identify a device** — pick one of your devices in the list and it will
-  signal itself (the demo light "blinks" in the logs).
+## Status of the integration
 
-## Scenes
+- **No box answers**: every created box failed to answer at its last read.
+- **Another box answers at the address of...**: the serial number read at a
+  box's address is another box's. The first box gets no command until it is
+  found again (search or new address).
+- **The configuration could not be read**: Gladys did not give it; it is
+  asked again every 30 s, and the boxes already known keep taking commands.
+- **The saved data cannot be read**: `/data/sky-q.json` exists but cannot be
+  read; it is left untouched and nothing is saved until it is fixed. A file
+  that is not valid JSON is moved to `sky-q.json.bad`.
 
-The integration adds its own cards to the scene editor (Gladys 5.1 or
-later), under the **Integrations** category:
+## What the integration keeps
 
-- **Motion detected** (trigger) — starts the scene when a demo motion sensor
-  sees something move. Optionally pick the sensor and what moved (person,
-  animal); left empty, any detection matches. The following actions can
-  read what moved with `{{triggerEvent.data.target}}`.
-- **Identify a device** (action) — makes the chosen device signal itself.
-  It returns whether the device could signal itself, so the following
-  actions can depend on it.
+In its data folder (`/data/sky-q.json`): the known boxes (serial number,
+address, model) and the time of the last read, so that a restart does not
+read sooner than the interval. No password: a box needs none.
 
-## Dashboard
+## Limits of this first milestone
 
-Add the **Demo status** widget to a dashboard: it shows the live
-temperature of the weather station and the power of the office plug, the
-connection the plug currently uses (orange when degraded) and the observed
-location. Its **Identify the light** button makes the demo light signal
-itself.
-
-## Troubleshooting
-
-The integration logs everything it does: check the integration logs from the
-Gladys UI (or `docker logs` on the host) with `LOG_LEVEL=debug` for the full
-detail.
+- Never tested with a real box (see the TODO of the repository for what to
+  check first).
+- No programme title for live TV (the guide is online only).
+- The current application of the box (Netflix, YouTube...) is not read.
+- No recording management (deleting, keeping, booking).

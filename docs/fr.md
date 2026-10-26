@@ -1,67 +1,168 @@
-# Template de démonstration
+# Sky Q
 
-Ceci est la documentation utilisateur de l'intégration. Gladys ré-héberge ce
-fichier et affiche un lien **Documentation** permanent vers lui dans l'écran
-de configuration (dans la langue de l'utilisateur, avec l'anglais en repli) —
-c'est au moment de configurer que l'utilisateur en a le plus besoin. Gardez
-les courtes indications d'accueil dans les blocs `section` du `config_schema`
-du manifest ; mettez ici le pas-à-pas détaillé (captures d'écran, dépannage…).
+Pilotez vos décodeurs **Sky Q** depuis Gladys, sur votre réseau local, sans
+aucun cloud : état d'alimentation, réveil et mise en veille, chaîne, lecture,
+pause, les autres touches de la télécommande, la chaîne ou l'enregistrement en
+cours et la part du disque des enregistrements utilisée. L'intégration utilise
+les ports locaux du décodeur (REST 9006, UPnP/SOAP 49153, télécommande 49160),
+ceux qu'utilisent les applications Sky et les bibliothèques de la communauté.
+
+> **Intégration non officielle, sans lien avec Sky.** Ce premier jalon a été
+> écrit et testé avec des décodeurs simulés : l'intégration n'a **jamais été
+> testée avec un vrai décodeur**. Vos retours sont les bienvenus.
+
+## Décodeurs pris en charge
+
+- Décodeurs Sky Q principaux (Royaume-Uni, Irlande, Italie, Allemagne).
+- Les Sky Q Mini et les TV Sky Glass (types `IPSETTOPBOX` et `TV`) sont lus
+  (état d'alimentation, disque) mais ne prennent aucune touche, et leur
+  lecture n'est pas lue, comme dans la bibliothèque de référence.
+
+## Préparer le décodeur
+
+Donnez au décodeur une **adresse IP fixe** dans votre box (bail DHCP réservé).
+Le décodeur doit être sur le même réseau que Gladys. Rien à activer sur le
+décodeur.
+
+## Ajouter un décodeur
+
+- **Par son adresse** : saisissez l'adresse IP dans « Adresses IP des
+  décodeurs » (plusieurs adresses séparées par des virgules) et enregistrez.
+- **Par la recherche** : utilisez **Chercher les décodeurs**. Gladys cherche
+  sur le réseau (SSDP, cible `urn:schemas-nds-com:device:SkyControl:2`) pour
+  l'intégration ; un réseau qui bloque le multicast peut cacher le décodeur :
+  saisissez alors son adresse.
+
+Le décodeur apparaît dans l'onglet **Découverte** de l'intégration : créez-le.
+Ses états arrivent avec la lecture suivante (au plus un intervalle de
+rafraîchissement plus tard).
 
 ## Ce que vous obtenez
 
-Six appareils de démonstration apparaissent après l'installation : une
-station météo (vraies données Open-Meteo), un interrupteur, une lampe
-variable, une prise connectée avec mesure de puissance, un détecteur de
-mouvement et une caméra.
+| Fonction (nom dans Gladys) | Détail                                                                                                                |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Power                      | Lecture seule : 1 allumé, 0 en veille ou sans réponse                                                                 |
+| Reachable                  | Lecture seule : 1 le décodeur répond sur le réseau (allumé ou en veille)                                              |
+| Wake up                    | Bouton : « Accueil » puis « Fermer », envoyés seulement quand le décodeur vient d'être lu en veille                   |
+| Standby                    | Bouton : la touche marche, envoyée seulement quand le décodeur vient d'être lu allumé                                 |
+| Channel                    | Lue pendant la TV en direct ; la régler tape les chiffres du numéro, à 300 ms d'intervalle                            |
+| Boutons                    | Lecture, pause, stop, enregistrer, retour rapide, avance rapide, chaîne +/-, flèches, OK, retour, Sky, guide TV, info |
+| Remote key                 | Liste de toutes les touches (couleurs, chiffres, texte, aide, Box Office...), la bascule marche brute comprise        |
+| Channel name               | Lecture seule, `-` quand aucune chaîne en direct n'est affichée                                                       |
+| Recording played           | Lecture seule : le titre de l'enregistrement lu, `-` sinon                                                            |
+| Playback                   | Lecture seule : en lecture, en pause ou à l'arrêt                                                                     |
+| Recordings disk used       | Lecture seule, en pourcentage utilisé, lu toutes les 10 minutes                                                       |
+
+Il n'y a pas d'interrupteur : le réveil et la mise en veille sont deux
+boutons, ainsi une scène « tout éteindre » ou un assistant vocal ne peut pas
+allumer ou éteindre un décodeur par erreur. Pas de volume : le décodeur n'en a
+pas que le réseau puisse lire ou régler. Le guide des programmes (EPG) n'est
+pas lu : il est seulement en ligne, et cette intégration reste sur votre
+réseau local.
+
+## Comment une commande part
+
+Les commandes vers un décodeur partent l'une après l'autre ; chacune dispose
+de 3,5 s à partir de la demande de Gladys, attente des précédentes comprise.
+Avant toute touche, l'intégration lit le numéro de série à l'adresse du
+décodeur : une touche ne part qu'après la lecture du numéro de série du
+décodeur lui-même à cette adresse (un décodeur remplacé, ou déplacé par le
+DHCP, ne reçoit pas de touche à une adresse où un autre décodeur répond).
+
+- **Wake up** (réveiller) : l'état d'alimentation est lu ; en veille, « Accueil » puis
+  « Fermer » sont envoyés (la façon dont l'intégration Home Assistant réveille
+  un décodeur : ces touches ne sont pas une bascule). Déjà allumé : rien n'est
+  envoyé.
+- **Standby** (mettre en veille) : l'état d'alimentation est lu ; allumé, la touche
+  marche est envoyée. Déjà en veille : rien n'est envoyé. La touche marche est
+  une bascule : elle n'est envoyée que sur un état lu juste avant.
+- La mise en veille et le réveil n'envoient **rien** (« nothing sent » dans
+  les journaux) quand : l'adresse du décodeur est inconnue, le décodeur ne
+  répond pas, son numéro de série est illisible ou celui d'un autre décodeur,
+  son état d'alimentation est illisible, c'est un Sky Q Mini ou une TV Sky
+  Glass, son port de télécommande refuse la connexion, ou les 3,5 s sont
+  écoulées avant.
+- Le protocole de la télécommande n'a pas d'accusé de réception : une touche
+  partie est « envoyée, sans confirmation ». Le décodeur est relu 5 s après
+  un réveil, une mise en veille, une chaîne, lecture, pause, stop ou une
+  touche chaîne (et 20 s après un réveil ou une mise en veille). Un réveil ou
+  une mise en veille qui n'a pas changé l'état au bout de 20 s est écrit dans
+  les journaux ; il n'est pas renvoyé de lui-même (une seconde bascule pourrait
+  défaire la première).
+- Une chaîne est tapée chiffre par chiffre. Quand la liste des chaînes du
+  décodeur est connue, un numéro qui n'y est pas est refusé. Un numéro dont
+  les chiffres ne peuvent pas tous être tapés dans le temps restant n'est pas
+  commencé.
+
+La liste **Remote key** avec la valeur **Power** envoie la bascule
+marche brute, sans lire l'état : un recours si l'état lu est faux.
+
+## L'User-Agent « SKYPLUS_skyplus »
+
+Pour trouver son service SkyPlay, un décodeur publie jusqu'à 50 fichiers de
+description sur son port UPnP. Beaucoup de décodeurs ne répondent à ces
+fichiers qu'avec l'User-Agent de leur propre logiciel, `SKYPLUS_skyplus`, que
+la bibliothèque de référence envoie. Avec l'accord explicite du mainteneur de
+ces intégrations, cette intégration peut l'envoyer, selon ces règles :
+
+- chaque fichier de description est d'abord demandé avec l'User-Agent propre
+  de l'intégration (`gladys-sky-q`) ;
+- `SKYPLUS_skyplus` n'est envoyé pour un fichier qu'après le refus de ce
+  fichier avec l'User-Agent propre (une réponse autre que 200 et 404, ou pas
+  de réponse), ou, quand aucun fichier n'a répondu à l'User-Agent propre, pour
+  les fichiers pas encore demandés ainsi ;
+- il ne part que vers l'adresse du décodeur lui-même, sur son port UPnP
+  (49153), pour ces seuls fichiers de description : les requêtes REST, les
+  requêtes SOAP et les touches portent l'User-Agent propre de l'intégration
+  ou aucun ;
+- une fois qu'un User-Agent a obtenu un fichier de description d'un
+  décodeur, l'autre n'est plus essayé pour ce décodeur jusqu'au redémarrage de
+  l'intégration ou un changement d'adresse du décodeur.
+
+Aucune autre imitation d'application n'est utilisée, et les services en ligne
+de Sky (guide, images) ne sont pas contactés.
 
 ## Configuration
 
-1. Ouvrez l'onglet **Configuration** de l'intégration.
-2. Renseignez la **latitude** et la **longitude** que la station météo de
-   démonstration doit observer (Paris par défaut), et choisissez votre unité
-   de température. L'**intervalle de rafraîchissement** règle la fréquence
-   de lecture de la station météo et de la puissance de la prise : toutes
-   les 5 minutes par défaut, toutes les minutes au plus.
-3. Enregistrez : les appareils apparaissent dans l'onglet **Découverte**,
-   prêts à être ajoutés.
+| Champ                              | Détail                                                                     |
+| ---------------------------------- | -------------------------------------------------------------------------- |
+| Adresses IP des décodeurs          | Séparées par des virgules ; les décodeurs trouvés par la recherche restent |
+| Intervalle de rafraîchissement (s) | 5 à 300, 15 par défaut : fréquence de lecture des décodeurs                |
 
-Le réglage **Préférer la connexion locale** pilote la prise de
-démonstration : elle affiche en badge le canal réellement utilisé (local ou
-cloud), avec un point orange quand elle fonctionne en mode dégradé (local
-refusé, bascule cloud).
+Une adresse invalide est ignorée ; le statut de l'intégration dit combien
+l'ont été (sans les réafficher).
 
-## Actions
+**Vérifier les décodeurs** montre, pour chaque décodeur connu, ce que la
+dernière lecture a trouvé et il y a combien de temps. Il ne lance une lecture
+que quand elle est due : jamais plus tôt que l'intervalle de rafraîchissement.
 
-- **Tester le fournisseur météo** — effectue une requête en direct vers
-  Open-Meteo et affiche la température et l'humidité actuelles sous le
-  bouton.
-- **Identifier un appareil** — choisissez un de vos appareils dans la liste
-  et il se signale (la lampe de démonstration « clignote » dans les logs).
+## Statut de l'intégration
 
-## Scènes
+- **Aucun décodeur ne répond** : tous les décodeurs créés n'ont pas répondu à
+  leur dernière lecture.
+- **Un autre décodeur répond à l'adresse de...** : le numéro de série lu à
+  l'adresse d'un décodeur est celui d'un autre. Le premier ne reçoit plus de
+  commande tant qu'il n'est pas retrouvé (recherche ou nouvelle adresse).
+- **La configuration n'a pas pu être lue** : Gladys ne l'a pas donnée ; elle
+  est redemandée toutes les 30 s, et les décodeurs déjà connus continuent
+  d'accepter les commandes.
+- **Les données enregistrées sont illisibles** : `/data/sky-q.json` existe
+  mais ne peut pas être lu ; il est laissé tel quel et rien n'est enregistré
+  tant que ce n'est pas réparé. Un fichier qui n'est pas du JSON valide est
+  déplacé dans `sky-q.json.bad`.
 
-L'intégration ajoute ses propres cartes à l'éditeur de scènes (Gladys 5.1
-ou plus récent), dans la catégorie **Intégrations** :
+## Ce que l'intégration garde
 
-- **Mouvement détecté** (déclencheur) — lance la scène quand un détecteur
-  de démonstration voit bouger quelque chose. Choisissez éventuellement le
-  détecteur et ce qui a bougé (personne, animal) ; laissés vides, toute
-  détection correspond. Les actions suivantes peuvent lire ce qui a bougé
-  avec `{{triggerEvent.data.target}}`.
-- **Identifier un appareil** (action) — fait se signaler l'appareil choisi.
-  Elle indique si l'appareil a pu se signaler, pour que les actions
-  suivantes puissent en dépendre.
+Dans son dossier de données (`/data/sky-q.json`) : les décodeurs connus
+(numéro de série, adresse, modèle) et l'heure de la dernière lecture, pour
+qu'un redémarrage ne lise pas plus tôt que l'intervalle. Aucun mot de passe :
+un décodeur n'en demande pas.
 
-## Tableau de bord
+## Limites de ce premier jalon
 
-Ajoutez le widget **État de la démo** à un tableau de bord : il affiche en
-direct la température de la station météo et la puissance de la prise du
-bureau, la connexion utilisée par la prise (en orange si dégradée) et la
-position observée. Son bouton **Identifier la lampe** fait se signaler la
-lampe de démonstration.
-
-## Dépannage
-
-L'intégration journalise tout ce qu'elle fait : consultez les logs de
-l'intégration depuis l'interface Gladys (ou `docker logs` sur l'hôte) avec
-`LOG_LEVEL=debug` pour le détail complet.
+- Jamais testée avec un vrai décodeur (voir le TODO du dépôt pour ce qu'il
+  faut vérifier d'abord).
+- Pas de titre de programme pour la TV en direct (le guide est seulement en
+  ligne).
+- L'application en cours sur le décodeur (Netflix, YouTube...) n'est pas lue.
+- Pas de gestion des enregistrements (supprimer, garder, programmer).
