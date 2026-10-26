@@ -590,16 +590,67 @@ test('/data unreadable: wake-up and standby refused until it is read again', asy
   const store = new MemoryStore(emptyData(), { problem: 'unreadable' });
   const { net, command, wait } = await setup({ store });
   assert.match((await command('standby')).error, /\/data cannot be read.*nothing sent/);
-  await wait(60 * SECOND);
+  await wait(20 * SECOND);
   assert.match((await command('wake')).error, /\/data cannot be read.*nothing sent/);
   assert.deepEqual(net.keyNames(), []);
   // Read again, with a guard on it: still guarded.
   const data = emptyData();
-  data.toggleGuards[SERIAL] = { wallAt: T0 + 60 * SECOND, ms: 30 * SECOND, on: false };
+  data.toggleGuards[SERIAL] = { wallAt: T0 + 20 * SECOND, ms: 30 * SECOND, on: false };
   store.data = data;
   store.problem = undefined;
   assert.match((await command('standby')).error, /not seen applied yet/);
   await wait(31 * SECOND);
+  assert.equal((await command('standby')).success, true);
+  assert.deepEqual(net.keyNames(), ['power']);
+});
+
+test('/data unreadable for good: the refusal ends 30 s after the start', async () => {
+  const store = new MemoryStore(emptyData(), { problem: 'unreadable' });
+  const { net, command, wait } = await setup({ store });
+  await wait(25 * SECOND);
+  assert.match((await command('standby')).error, /\/data cannot be read/);
+  await wait(6 * SECOND);
+  assert.equal((await command('standby')).success, true);
+  assert.deepEqual(net.keyNames(), ['power']);
+});
+
+test('/data read again: only the guards come from the file, the known boxes stay', async () => {
+  const store = new MemoryStore(emptyData(), { problem: 'unreadable' });
+  const { app, command, wait } = await setup({ store });
+  assert.ok(app.boxes.length >= 1 || app.clients.size >= 1);
+  const known = app.boxes.map((b) => b.serial);
+  assert.match((await command('standby')).error, /\/data cannot be read/);
+  store.problem = undefined;
+  assert.equal((await command('standby')).success, true);
+  await wait(0);
+  assert.deepEqual(
+    app.boxes.map((b) => b.serial),
+    known,
+  );
+  assert.ok(app.toggleGuards.has(known[0]) || app.data.boxes[known[0]]);
+});
+
+test('a guard that cannot be saved: the key is not sent, no guard left', async () => {
+  const store = new MemoryStore();
+  const { app, net, command } = await setup({ store });
+  store.failSave = true;
+  assert.match((await command('standby')).error, /guard could not be saved.*nothing sent/);
+  assert.deepEqual(net.keyNames(), []);
+  assert.equal(app.toggleGuards.size, 0);
+  assert.deepEqual(app.data.toggleGuards, {});
+  store.failSave = false;
+  assert.equal((await command('standby')).success, true);
+});
+
+test('no key left (remote port refused): the guard is gone from /data too', async () => {
+  const box = createBox();
+  const store = new MemoryStore();
+  const { net, command, wait } = await setup({ store, boxes: [box] });
+  box.fail.key = 'unreachable';
+  assert.match((await command('standby')).error, /nothing sent/);
+  await wait(2 * SECOND);
+  assert.deepEqual(store.data.toggleGuards, {});
+  box.fail.key = undefined;
   assert.equal((await command('standby')).success, true);
   assert.deepEqual(net.keyNames(), ['power']);
 });

@@ -165,6 +165,8 @@ export class SkyApp {
       this.logger.warn(`/data/sky-q.json: ${loaded.problem}`);
     }
     this.guardsUnknown = loaded.problem === 'unreadable';
+    // A guard of the previous process cannot outlive its duration from now.
+    this.guardsUnknownUntil = this.monotonic() + this.timings.toggleGuard;
     // The last round before a restart: the next one never comes sooner than
     // the interval (a date in the future is brought to now).
     const at = this.now();
@@ -610,7 +612,10 @@ export class SkyApp {
    */
   toggleGuardAlive(box, mono = this.monotonic()) {
     if (this.guardsUnknown && !this.rereadGuards()) {
-      return true;
+      if (mono < this.guardsUnknownUntil) {
+        return true;
+      }
+      this.guardsUnknown = false;
     }
     const guard = this.toggleGuards.get(box.serial);
     if (!guard) {
@@ -641,9 +646,16 @@ export class SkyApp {
         ms: this.timings.toggleGuard,
         on,
       };
-      await this.save().catch((err) => {
-        this.logger.warn(`Could not save /data: ${err.message}`);
-      });
+      try {
+        await this.save();
+      } catch (err) {
+        // A guard that may not survive a restart: the key is not sent.
+        this.toggleGuards.delete(box.serial);
+        delete this.data.toggleGuards[box.serial];
+        throw nothingSent(
+          `Sky Q ${box.serial}: the guard could not be saved to /data (${err.message})`,
+        );
+      }
     }
   }
 
@@ -688,7 +700,8 @@ export class SkyApp {
     if (loaded.problem === 'unreadable') {
       return false;
     }
-    this.data = loaded.data;
+    // Only the guards come from the file: the boxes known in memory stay.
+    this.data.toggleGuards = { ...loaded.data.toggleGuards, ...this.data.toggleGuards };
     this.storeProblem = loaded.problem;
     this.guardsUnknown = false;
     this.restoreGuards();

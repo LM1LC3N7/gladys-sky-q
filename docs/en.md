@@ -90,7 +90,9 @@ moved by DHCP, gets no key at an address where another box answers).
   The guard is kept in `/data` with its wall-clock time: after a restart of
   the integration it is alive if it is under 30 s old, or if the clock seems
   to have been set back. If `/data` cannot be read, they are refused ("/data
-  cannot be read ...: nothing sent") until it can.
+  cannot be read ...: nothing sent") until it can, and at most 30 s after the
+  start (a guard of the previous run cannot be older). If the guard cannot be
+  written to `/data`, the key is not sent.
 - Between the read of the state and the key, the handshake of the remote
   takes a moment (up to 1.5 s): a change made in that moment with the Sky
   remote is not seen.

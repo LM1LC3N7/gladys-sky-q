@@ -99,7 +99,10 @@ DHCP, ne reçoit pas de touche à une adresse où un autre décodeur répond).
   gardée dans `/data` avec son heure murale : après un redémarrage de
   l'intégration, elle est active si elle a moins de 30 s, ou si l'horloge
   semble avoir reculé. Si `/data` est illisible, ils sont refusés (« /data
-  cannot be read ... : nothing sent ») tant qu'il ne l'est pas.
+  cannot be read ... : nothing sent ») tant qu'il ne l'est pas, et au plus 30 s
+  après le démarrage (une garde du lancement précédent ne peut pas être plus
+  vieille). Si la garde ne peut pas être écrite dans `/data`, la touche n'est
+  pas envoyée.
 - Entre la lecture de l'état et la touche, la poignée de main de la
   télécommande prend un instant (jusqu'à 1,5 s) : un changement fait à ce
   moment avec la télécommande Sky n'est pas vu.
