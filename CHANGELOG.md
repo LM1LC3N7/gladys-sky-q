@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-26
+
 ### Added
 
 - Sky Q boxes on the local network, added by IP address or found by an SSDP
@@ -26,3 +28,6 @@ the notes of the version's GitHub Release.
   integration's own one.
 - A wake-up or standby blocks the next one until the state is seen changed
   (or 30 s), kept in /data across a restart; the power key is not in the remote key dropdown.
+
+[Unreleased]: https://github.com/LM1LC3N7/gladys-sky-q/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/LM1LC3N7/gladys-sky-q/releases/tag/v0.1.1
