@@ -21,7 +21,8 @@ the community libraries use.
 ## Prepare the box
 
 Give the box a **fixed IP address** in your router (reserved DHCP lease). The
-box must be on the same network as Gladys. Nothing to enable on the box.
+box must be on the same network as Gladys. No setting of the box is known to
+be needed (not checked on a real box yet).
 
 ## Add a box
 
@@ -37,23 +38,23 @@ come with the next read (at most one refresh interval later).
 
 ## What you get
 
-| Feature              | Detail                                                                                                          |
-| -------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Power                | Read only: 1 on, 0 in standby or not answering                                                                  |
-| Reachable            | Read only: 1 the box answers on the network (on or in standby)                                                  |
-| Wake up              | Button: "Home" then "Dismiss", sent only when the box was just read in standby                                  |
-| Standby              | Button: the power key, sent only when the box was just read on                                                  |
-| Channel              | Read while live TV is shown; setting it types the digits of the number, 300 ms apart                            |
-| Buttons              | Play, pause, stop, record, rewind, fast forward, channel up/down, arrows, select, back, Sky, TV guide, info     |
-| Remote key           | Dropdown of every key of the remote (colours, digits, text, help, Box Office...), the raw power toggle included |
-| Channel name         | Read only, `-` when no live channel is shown                                                                    |
-| Recording played     | Read only: the title of the recording played, `-` otherwise                                                     |
-| Playback             | Read only: playing, paused or idle                                                                              |
-| Recordings disk used | Read only, in percent, read every 10 minutes                                                                    |
+| Feature              | Detail                                                                                                      |
+| -------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Power                | Read only: 1 on, 0 in standby or not answering                                                              |
+| Reachable            | Read only: 1 the box answers on the network (on or in standby)                                              |
+| Wake up              | Button: "Home" then "Dismiss", sent only when the box was just read in standby                              |
+| Standby              | Button: the power key, sent only when the box was just read on                                              |
+| Channel              | Read while live TV is shown; setting it types the digits of the number, 300 ms apart                        |
+| Buttons              | Play, pause, stop, record, rewind, fast forward, channel up/down, arrows, select, back, Sky, TV guide, info |
+| Remote key           | Dropdown of the keys of the remote (colours, digits, text, help, Box Office...), never the power key        |
+| Channel name         | Read only, `-` when no live channel is shown                                                                |
+| Recording played     | Read only: the title of the recording played, `-` otherwise                                                 |
+| Playback             | Read only: playing, paused or idle                                                                          |
+| Recordings disk used | Read only, in percent, read every 10 minutes                                                                |
 
-There is no switch: wake-up and standby are two push buttons, so an
-"everything off" scene or a voice assistant cannot turn a box on or off by
-mistake. There is no volume: the box has none the network can read or set.
+There is no switch: wake-up and standby are two push buttons, so a generic
+on/off command ("everything off" scene, voice assistant) does not reach them,
+and the power toggle leaves only through the guarded Standby button. There is no volume: the box has none the network can read or set.
 The programme guide (EPG) is not read: it is online only, and this
 integration stays on your local network.
 
@@ -82,27 +83,34 @@ moved by DHCP, gets no key at an address where another box answers).
   wake-up or a standby). A wake-up or standby that did not
   change the state after 20 s is written to the logs; it is not sent again by
   itself (a second toggle could undo the first).
+- After a wake-up or a standby, neither is sent again until a read shows the
+  state changed, or for 30 s (a box applies a key a second or two later: a
+  second toggle read on the old state would undo the first). Meanwhile they
+  are refused ("not seen applied yet: nothing sent").
+- Between the read of the state and the key, the handshake of the remote
+  takes a moment (up to 1.5 s): a change made in that moment with the Sky
+  remote is not seen.
 - A channel is typed digit by digit. When the channel list of the box is
   known, a number that is not in it is refused. A number whose digits cannot
   all be typed in the time left is not started.
 
-The **Remote key** dropdown with the value **Power** sends the raw power
-toggle without reading the state: a workaround if the state read is wrong.
-
 ## The User-Agent "SKYPLUS_skyplus"
 
 To find its SkyPlay service, a box publishes up to 50 description files on
-its UPnP port. Many boxes answer these files only to the User-Agent of their
-own software, `SKYPLUS_skyplus`, which the reference library sends. With the
+its UPnP port. The reference library asks them with the User-Agent of the
+box's own software, `SKYPLUS_skyplus`: some boxes may answer them only so
+(not checked on a real box yet). With the
 explicit agreement of the maintainer of these integrations, this integration
 may send it, under these rules:
 
 - each description file is first asked with this integration's own
   User-Agent (`gladys-sky-q`);
-- `SKYPLUS_skyplus` is sent for a file only after that file was refused with
-  the own User-Agent (an answer other than 200 and 404, or no answer), or,
-  when not one file answered the own User-Agent, for the files not asked so
-  yet;
+- `SKYPLUS_skyplus` is sent for a file only after that file got an explicit
+  HTTP refusal with the own User-Agent (an answer other than 200 and 404),
+  and only while no file answered the own User-Agent; a 404, no answer or a
+  cut answer never leads to it;
+- one pass over the files at most; after a failed search, or an error of the
+  SOAP service, the files are asked again 10 minutes later at the earliest;
 - it goes only to the box's own address, only on its UPnP port (49153), only
   for these description files: the REST requests, the SOAP requests and the
   remote keys carry the integration's own User-Agent or none;

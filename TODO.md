@@ -49,9 +49,11 @@ up to date at the end of every milestone.
   `SOAP_USER_AGENT`). Allowed for this module only, towards the local box
   only, and only when the box really requires it: each description file is
   first asked with the own User-Agent `gladys-sky-q`; `SKYPLUS_skyplus` is
-  sent for a file only after that file was refused (an answer other than 200
-  and 404, or no answer), or, after a full pass where no file answered the
-  own one, for the files not asked so yet. Only to the box's own address, on
+  sent for a file only after an explicit HTTP refusal of that file (an
+  answer other than 200 and 404) with the own one, while no file answered the
+  own one (review r1: no second pass on plain 404s, no Sky User-Agent on
+  silence). One pass at most; a failed search, or a SOAP error, waits 10
+  minutes before the next one. Only to the box's own address, on
   its UPnP port 49153, for `/description<N>.xml`: REST, SOAP and remote keys
   never carry it. Once one User-Agent got a file, the other is not tried for
   that box until the client is replaced (restart, new address). An info line
@@ -94,8 +96,11 @@ up to date at the end of every milestone.
   command; wake-up sends "home" + "dismiss" only on a box read in standby
   (not a toggle). A state unknown sends nothing. Never sent again by
   itself: a follow-up read at 5 s and 20 s, and a log line when the state did
-  not change. The raw power toggle stays in the "Remote key" dropdown as a
-  documented workaround.
+  not change. A wake-up or standby sent blocks both until a read shows the
+  state changed, or 30 s (review r1: two close standby on a box slow to
+  apply sent two toggles). The power key is not in the "Remote key" dropdown
+  (review r1). UPnP/SOAP answers with a DOCTYPE, ENTITY, comment, CDATA,
+  stylesheet or more than 200 references are refused.
 - Commands: serialized per box, never across boxes; 3.5 s from the request
   of Gladys (the queue included), the identity and state read within 1.5 s
   of it; a command still queued at its deadline is dropped, never sent late.

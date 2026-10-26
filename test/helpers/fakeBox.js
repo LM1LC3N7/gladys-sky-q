@@ -71,6 +71,7 @@ export function createFakeNet(clock, boxes = [createBox()]) {
       at: clock.now,
     });
     const box = net.boxes.get(host);
+    applyDue(box);
     if (box?.latency) {
       clock.now += box.latency;
     }
@@ -141,11 +142,26 @@ export function createFakeNet(clock, boxes = [createBox()]) {
     if (box.applyKeys === false) {
       return;
     }
-    if (name === 'power') {
-      box.standby = !box.standby;
-    } else if (name === 'tvguide' && box.standby) {
-      box.standby = false;
+    const effect = () => {
+      if (name === 'power') {
+        box.standby = !box.standby;
+      } else if (name === 'tvguide' && box.standby) {
+        box.standby = false;
+      }
+    };
+    if (box.applyDelay) {
+      // Applied later, as a real box: seen by the requests from then on.
+      (box.later ??= []).push({ at: clock.now + box.applyDelay, effect });
+    } else {
+      effect();
     }
+  };
+
+  const applyDue = (box) => {
+    if (!box?.later) return;
+    const due = box.later.filter((l) => l.at <= clock.now);
+    box.later = box.later.filter((l) => l.at > clock.now);
+    for (const l of due) l.effect();
   };
 
   net.keyNames = (host = HOST) => net.keys.filter((k) => k.host === host).map((k) => k.name);

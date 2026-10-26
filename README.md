@@ -39,11 +39,12 @@ Gladys ⇄ SDK ⇄ src/handlers.js ⇄ src/app.js (SkyApp)
   (`/as/pvr/storage`, every 10 minutes).
 - **Commands**: serialized per box, 3.5 s each from the request of Gladys.
   Wake-up sends "home" + "dismiss" on a box read in standby; standby sends the
-  power toggle on a box read on; a channel is typed digit by digit.
+  power toggle on a box read on, and a guard blocks both until the state
+  is seen changed (or 30 s); a channel is typed digit by digit.
 - **User-Agent `SKYPLUS_skyplus`**: agreed by the maintainer for this module
   only, sent to the box's own UPnP port for its description files, and only
-  after the same file was refused with the integration's own User-Agent (or
-  when no file answered it). Details and rules: [docs/en.md](docs/en.md).
+  after an explicit HTTP refusal (not 200, not 404) of the same file with
+  the integration's own User-Agent, while no file answered the own one. Details and rules: [docs/en.md](docs/en.md).
   The online programme guide (`atlantis.epgsky.com`) is not used.
 
 ## Development

@@ -6,13 +6,13 @@
 //
 // The User-Agent "SKYPLUS_skyplus" (agreed by the maintainer for this module
 // only, the box's own software sends it): the description files are first
-// asked with this integration's own User-Agent. The box's one is sent only
-// when the own one is refused: the same file again after an answer other
-// than 200 and 404 (or no answer), and every file not asked so after a full
-// pass where no file answered 200. Only to the box's own address, on its
-// UPnP port, for these files: no other request ever carries it. Once one
-// User-Agent got a 200, the other is not tried again for this box until the
-// client is replaced (new address, restart).
+// asked with this integration's own User-Agent. The box's one is sent for a
+// file only after that file got an explicit HTTP refusal (an answer other
+// than 200 and 404) with the own one, and only while no file answered the
+// own one. Only to the box's own address, on its UPnP port, for these files:
+// no other request ever carries it. Once one User-Agent got a file, the
+// other is not tried again for this box until the client is replaced (new
+// address, restart).
 // -----------------------------------------------------------------------------
 
 import { KEY_CODES, LIMITS, PORTS, TIMINGS } from '../constants.js';
@@ -154,8 +154,7 @@ export class SkyClient {
   }
 
   /** One description file with the Sky User-Agent: its body on a 200, else undefined. */
-  async askWithSky(index, state) {
-    state.skyAsked.add(index);
+  async askWithSky(index) {
     let res;
     try {
       res = await this.description(index, SKY_USER_AGENT);
@@ -177,14 +176,16 @@ export class SkyClient {
 
   /**
    * Asks one description file with the own User-Agent (unless the box is
-   * known to need Sky's). Sky's is tried on the same file only after a
-   * refusal of it: any answer but 200 and 404 ("no such file"), or no answer.
+   * known to need Sky's). Sky's is tried on the same file only after an
+   * explicit HTTP refusal of it: an answer other than 200 and 404, while no
+   * file answered the own User-Agent yet. No answer, a cut answer or a 404
+   * never leads to it.
    * @returns {Promise<string | undefined>} the body of a 200 answer.
    */
-  async describeOne(index, state) {
+  async describeOne(index) {
     const shared = this.shared;
     if (shared.uaMode === UA_MODES.SKY) {
-      return this.askWithSky(index, state);
+      return this.askWithSky(index);
     }
     let res;
     try {
@@ -193,23 +194,22 @@ export class SkyClient {
       if (err.kind !== ERROR_KINDS.TIMEOUT && err.kind !== ERROR_KINDS.PROTOCOL) {
         throw err;
       }
+      return undefined;
     }
-    if (res?.status === 200) {
+    if (res.status === 200) {
       shared.uaMode = UA_MODES.OWN;
       return res.body;
     }
-    if (shared.uaMode === UA_MODES.OWN || res?.status === 404) {
+    if (shared.uaMode === UA_MODES.OWN || res.status === 404) {
       return undefined;
     }
-    return this.askWithSky(index, state);
+    return this.askWithSky(index);
   }
 
   /**
    * The path of the SkyPlay control URL, from the description files 0 to 49
-   * (as the library), within `descriptionBudget`. When no file at all
-   * answered the own User-Agent, the files not asked with Sky's yet are
-   * asked with it. Undefined when not found this time; throws when the port
-   * does not answer at all.
+   * (as the library), one pass within `descriptionBudget`. Undefined when not
+   * found this time; throws when the port does not answer at all.
    */
   async findControlPath() {
     if (this.shared.controlPath) {
@@ -217,31 +217,13 @@ export class SkyClient {
     }
     const scoped =
       this.deadline === undefined ? this.withBudget(this.timings.descriptionBudget) : this;
-    const state = { skyAsked: new Set() };
-    const found = (body) => {
-      const path = body === undefined ? undefined : parseDescription(body);
-      if (path) {
-        this.shared.controlPath = path;
-      }
-      return path;
-    };
     try {
       for (let index = 0; index < LIMITS.descriptions; index += 1) {
-        const path = found(await scoped.describeOne(index, state));
+        const body = await scoped.describeOne(index);
+        const path = body === undefined ? undefined : parseDescription(body);
         if (path) {
+          this.shared.controlPath = path;
           return path;
-        }
-      }
-      if (this.shared.uaMode !== undefined) {
-        return undefined;
-      }
-      // Not one file answered the own User-Agent: the box refuses it.
-      for (let index = 0; index < LIMITS.descriptions; index += 1) {
-        if (!state.skyAsked.has(index)) {
-          const path = found(await scoped.askWithSky(index, state));
-          if (path) {
-            return path;
-          }
         }
       }
     } catch (err) {

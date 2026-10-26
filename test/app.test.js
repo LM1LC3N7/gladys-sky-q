@@ -476,3 +476,89 @@ test('a power state of the wrong shape sends nothing, for standby and wake-up', 
   }
   assert.deepEqual(net.keyNames(), []);
 });
+
+test('two standby close together on a box slow to apply: one power key, the box stays in standby', async () => {
+  const box = createBox({ applyDelay: 2 * SECOND });
+  const { gladys, net, command, wait } = await setup({ boxes: [box] });
+  const first = await command('standby', 1, { step: 100 });
+  assert.equal(first.success, true, first.error);
+  await wait(300);
+  const second = await command('standby');
+  assert.match(second.error, /not seen applied yet.*nothing sent/);
+  // Sent at once (double click, scene, retry of Gladys): the same.
+  const device = boxDevice();
+  const feature = device.features.find((f) => f.external_id === id('standby'));
+  const both = Promise.all([
+    gladys.fake.setValue(device, feature, 1),
+    gladys.fake.setValue(device, feature, 1),
+  ]);
+  await wait(100);
+  await both;
+  assert.deepEqual(net.keyNames(), ['power']);
+  await wait(5 * SECOND);
+  assert.equal(box.standby, true);
+  assert.equal(gladys.fake.lastState(id('power')), 0);
+  // Seen applied: the guard is lifted; a wake-up goes.
+  assert.equal((await command('wake')).success, true);
+  assert.deepEqual(net.keyNames(), ['power', 'tvguide', 'backup']);
+});
+
+test('a wake-up or standby never seen applied: the guard ends after 30 s', async () => {
+  const box = createBox({ applyKeys: false });
+  const { net, command, wait } = await setup({ boxes: [box] });
+  assert.equal((await command('standby')).success, true);
+  await wait(20 * SECOND);
+  assert.match((await command('standby')).error, /not seen applied yet/);
+  await wait(10 * SECOND);
+  assert.equal((await command('standby')).success, true);
+  assert.deepEqual(net.keyNames(), ['power', 'power']);
+});
+
+test('the remote key dropdown never sends the power toggle', async () => {
+  const { net, command } = await setup();
+  const option = boxDevice().features.find((f) => f.external_id === id('key')).supported_options;
+  assert.ok(option.every((o) => o.value !== 'power'));
+  assert.match((await command('key', 'power')).error, /Unknown key.*nothing sent/);
+  assert.deepEqual(net.keyNames(), []);
+});
+
+test('one box: commands one at a time; one still queued at its deadline is never sent late', async () => {
+  const box = createBox({ latency: 450 });
+  const { gladys, net, wait } = await setup({ boxes: [box] });
+  const device = boxDevice();
+  const feature = device.features.find((f) => f.external_id === id('play'));
+  const acks = Array.from({ length: 6 }, () => gladys.fake.setValue(device, feature, 1));
+  const results = [];
+  acks.forEach((a, i) => a.then((r) => (results[i] = r)));
+  for (let i = 0; i < 60; i += 1) await wait(100);
+  await Promise.all(acks);
+  // Each command: identity 450 ms + key 450 ms, one after the other.
+  const at = net.keys.map((k) => k.at);
+  for (let i = 1; i < at.length; i += 1) assert.ok(at[i] - at[i - 1] >= 900, `${at}`);
+  assert.ok(results.slice(0, 4).every((r) => r.success));
+  assert.ok(results.slice(4).every((r) => !r.success && /nothing sent/.test(r.error)));
+  const sent = net.keys.length;
+  await wait(10 * SECOND);
+  assert.equal(net.keys.length, sent, 'nothing sent late');
+});
+
+test('a SOAP error does not search the description files at every round', async () => {
+  const box = createBox({ needsSkyUa: true });
+  const { net, wait } = await setup({ boxes: [box] });
+  box.fail[box.controlPath] = 500;
+  const sky = () => net.requests.filter((r) => r.ua === 'SKYPLUS_skyplus').length;
+  await wait(15 * SECOND);
+  const after = sky();
+  await wait(5 * MINUTE);
+  assert.equal(sky(), after, 'no search for 10 minutes');
+  await wait(6 * MINUTE);
+  assert.ok(sky() > after);
+});
+
+test('a remote key from the dropdown is followed by a read', async () => {
+  const { net, command, wait } = await setup();
+  const before = net.count(ROUND);
+  await command('key', 'red');
+  await wait(5 * SECOND);
+  assert.equal(net.count(ROUND), before + 1);
+});

@@ -157,3 +157,30 @@ test('key events: pressed and released, as the library builds them', () => {
   assert.deepEqual([...keyEvent(64, true)], [4, 1, 0, 0, 0, 0, 228, 0]);
   assert.deepEqual([...keyEvent(241, true)], [4, 1, 0, 0, 0, 0, 239, 1]);
 });
+
+test('hostile XML is refused: DOCTYPE, ENTITY, comment, CDATA, stylesheet, reference floods', () => {
+  const laughs =
+    '<?xml version="1.0"?><!DOCTYPE lolz [<!ENTITY lol "lol"><!ENTITY lol2 "&lol;&lol;">]>' +
+    transportInfo('PLAYING').replace(/^<\?xml[^>]*>/, '');
+  const xxe = '<!DOCTYPE x [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>' + mediaInfo('&xxe;');
+  const comment = transportInfo('NO_MEDIA_PRESENT').replace(
+    '<CurrentTransportState>',
+    '<!-- <CurrentTransportState>PLAYING</CurrentTransportState> --><CurrentTransportState>',
+  );
+  const cdata = transportInfo('X').replace('X', '<![CDATA[PLAYING]]>');
+  const stylesheet = '<?xml-stylesheet href="x"?>' + transportInfo('PLAYING');
+  const flood = mediaInfo('xsi://869' + '&#48;'.repeat(300));
+  for (const [name, xml] of Object.entries({ laughs, comment, cdata, stylesheet })) {
+    assert.throws(() => parseTransport(xml), /refused/, name);
+  }
+  assert.throws(() => parseMedia(xxe), /refused/);
+  assert.throws(() => parseMedia(flood), /too many/);
+  assert.equal(parseDescription('<!DOCTYPE x>' + description()), undefined);
+  assert.equal(
+    parseDescription(description().replace('<serviceList>', '<!-- x --><serviceList>')),
+    undefined,
+  );
+  // A numeric reference in the URI and in the path is decoded once, then checked.
+  assert.deepEqual(parseMedia(mediaInfo('xsi://&#56;69')), { kind: 'live', sid: 0x869 });
+  assert.equal(parseDescription(description({ controlURL: '/&#46;&#46;/x' })), undefined);
+});

@@ -21,8 +21,9 @@ ceux qu'utilisent les applications Sky et les bibliothèques de la communauté.
 ## Préparer le décodeur
 
 Donnez au décodeur une **adresse IP fixe** dans votre box (bail DHCP réservé).
-Le décodeur doit être sur le même réseau que Gladys. Rien à activer sur le
-décodeur.
+Le décodeur doit être sur le même réseau que Gladys. Aucun réglage du
+décodeur n'est connu comme nécessaire (pas encore vérifié sur un vrai
+décodeur).
 
 ## Ajouter un décodeur
 
@@ -47,15 +48,16 @@ rafraîchissement plus tard).
 | Standby                    | Bouton : la touche marche, envoyée seulement quand le décodeur vient d'être lu allumé                                 |
 | Channel                    | Lue pendant la TV en direct ; la régler tape les chiffres du numéro, à 300 ms d'intervalle                            |
 | Boutons                    | Lecture, pause, stop, enregistrer, retour rapide, avance rapide, chaîne +/-, flèches, OK, retour, Sky, guide TV, info |
-| Remote key                 | Liste de toutes les touches (couleurs, chiffres, texte, aide, Box Office...), la bascule marche brute comprise        |
+| Remote key                 | Liste des touches (couleurs, chiffres, texte, aide, Box Office...), jamais la touche marche                           |
 | Channel name               | Lecture seule, `-` quand aucune chaîne en direct n'est affichée                                                       |
 | Recording played           | Lecture seule : le titre de l'enregistrement lu, `-` sinon                                                            |
 | Playback                   | Lecture seule : en lecture, en pause ou à l'arrêt                                                                     |
 | Recordings disk used       | Lecture seule, en pourcentage utilisé, lu toutes les 10 minutes                                                       |
 
 Il n'y a pas d'interrupteur : le réveil et la mise en veille sont deux
-boutons, ainsi une scène « tout éteindre » ou un assistant vocal ne peut pas
-allumer ou éteindre un décodeur par erreur. Pas de volume : le décodeur n'en a
+boutons, qu'une commande générique marche/arrêt (scène « tout éteindre »,
+assistant vocal) n'atteint pas, et la bascule marche ne part que par le bouton
+Standby gardé. Pas de volume : le décodeur n'en a
 pas que le réseau puisse lire ou régler. Le guide des programmes (EPG) n'est
 pas lu : il est seulement en ligne, et cette intégration reste sur votre
 réseau local.
@@ -89,28 +91,37 @@ DHCP, ne reçoit pas de touche à une adresse où un autre décodeur répond).
   une mise en veille qui n'a pas changé l'état au bout de 20 s est écrit dans
   les journaux ; il n'est pas renvoyé de lui-même (une seconde bascule pourrait
   défaire la première).
+- Après un réveil ou une mise en veille, ni l'un ni l'autre ne repart tant
+  qu'une lecture n'a pas montré l'état changé, ou pendant 30 s (un décodeur
+  applique une touche une ou deux secondes plus tard : une seconde bascule lue
+  sur l'ancien état déferait la première). Entre-temps, ils sont refusés
+  (« not seen applied yet: nothing sent »).
+- Entre la lecture de l'état et la touche, la poignée de main de la
+  télécommande prend un instant (jusqu'à 1,5 s) : un changement fait à ce
+  moment avec la télécommande Sky n'est pas vu.
 - Une chaîne est tapée chiffre par chiffre. Quand la liste des chaînes du
   décodeur est connue, un numéro qui n'y est pas est refusé. Un numéro dont
   les chiffres ne peuvent pas tous être tapés dans le temps restant n'est pas
   commencé.
 
-La liste **Remote key** avec la valeur **Power** envoie la bascule
-marche brute, sans lire l'état : un recours si l'état lu est faux.
-
 ## L'User-Agent « SKYPLUS_skyplus »
 
 Pour trouver son service SkyPlay, un décodeur publie jusqu'à 50 fichiers de
-description sur son port UPnP. Beaucoup de décodeurs ne répondent à ces
-fichiers qu'avec l'User-Agent de leur propre logiciel, `SKYPLUS_skyplus`, que
-la bibliothèque de référence envoie. Avec l'accord explicite du mainteneur de
+description sur son port UPnP. La bibliothèque de référence les demande avec
+l'User-Agent du logiciel du décodeur, `SKYPLUS_skyplus` : certains décodeurs ne
+répondraient qu'ainsi (pas encore vérifié sur un vrai décodeur). Avec l'accord explicite du mainteneur de
 ces intégrations, cette intégration peut l'envoyer, selon ces règles :
 
 - chaque fichier de description est d'abord demandé avec l'User-Agent propre
   de l'intégration (`gladys-sky-q`) ;
-- `SKYPLUS_skyplus` n'est envoyé pour un fichier qu'après le refus de ce
-  fichier avec l'User-Agent propre (une réponse autre que 200 et 404, ou pas
-  de réponse), ou, quand aucun fichier n'a répondu à l'User-Agent propre, pour
-  les fichiers pas encore demandés ainsi ;
+- `SKYPLUS_skyplus` n'est envoyé pour un fichier qu'après un refus HTTP
+  explicite de ce fichier avec l'User-Agent propre (une réponse autre que 200
+  et 404), et seulement tant qu'aucun fichier n'a répondu à l'User-Agent
+  propre ; un 404, une absence de réponse ou une réponse coupée n'y mènent
+  pas ;
+- une seule passe sur les fichiers ; après une recherche vaine, ou une erreur
+  du service SOAP, les fichiers sont redemandés 10 minutes plus tard au plus
+  tôt ;
 - il ne part que vers l'adresse du décodeur lui-même, sur son port UPnP
   (49153), pour ces seuls fichiers de description : les requêtes REST, les
   requêtes SOAP et les touches portent l'User-Agent propre de l'intégration

@@ -22,4 +22,7 @@ the notes of the version's GitHub Release.
   dropdown of every remote key.
 - "Find the boxes" and "Check the boxes" buttons.
 - The User-Agent `SKYPLUS_skyplus`, agreed by the maintainer, sent only to a
-  box's own description files after they refused the integration's own one.
+  box's own description files after an explicit HTTP refusal of the
+  integration's own one.
+- A wake-up or standby blocks the next one until the state is seen changed
+  (or 30 s); the power key is not in the remote key dropdown.

@@ -9,6 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer as createTcpServer } from 'node:net';
+import { TIMINGS } from '../src/constants.js';
 import { SKY_USER_AGENT, SkyClient } from '../src/sky/client.js';
 import { ERROR_KINDS, OWN_USER_AGENT, request } from '../src/sky/http.js';
 import { keyEvent, sendKey } from '../src/sky/remote.js';
@@ -146,6 +147,21 @@ async function fakeUpnp({ refuseOwn }) {
       res.writeHead(404).end();
       return;
     }
+    if (refuseOwn === 'silent' && ua !== SKY_USER_AGENT) {
+      return;
+    }
+    if (refuseOwn === 'mixed') {
+      if (req.url === '/description0.xml') {
+        res.writeHead(200).end(description({ sky: false }));
+      } else if (req.url === '/description1.xml') {
+        res.writeHead(500).end();
+      } else if (req.url === '/description2.xml') {
+        res.writeHead(200).end(description());
+      } else {
+        res.writeHead(404).end();
+      }
+      return;
+    }
     if (refuseOwn === '500' && ua !== SKY_USER_AGENT) {
       res.writeHead(500).end();
       return;
@@ -203,18 +219,29 @@ test('control URL: a box refusing the own User-Agent (500) gets the Sky one on t
   assert.equal(client.uaMode, 'sky');
 });
 
-test('control URL: a box answering 404 to the own User-Agent everywhere gets a second pass', async (t) => {
+test('control URL: 404 everywhere, or silence, never leads to the Sky User-Agent', async (t) => {
   const upnp = await fakeUpnp({ refuseOwn: 'all404' });
   t.after(() => upnp.close());
-  const client = clientFor(upnp.port);
-  assert.equal(await client.findControlPath(), CONTROL_PATH);
-  const own = upnp.seen.filter((s) => s.ua === OWN_USER_AGENT);
-  const sky = upnp.seen.filter((s) => s.ua === SKY_USER_AGENT);
-  assert.equal(own.length, 50, 'a full pass with the own User-Agent first');
-  assert.deepEqual(
-    sky.map((s) => s.url),
-    ['/description0.xml', '/description1.xml', '/description2.xml'],
-  );
+  assert.equal(await clientFor(upnp.port).findControlPath(), undefined);
+  assert.equal(upnp.seen.length, 50, 'one pass');
+  assert.ok(upnp.seen.every((s) => s.ua === OWN_USER_AGENT));
+  const silent = await fakeUpnp({ refuseOwn: 'silent' });
+  t.after(() => silent.close());
+  const client = new SkyClient({
+    host: '127.0.0.1',
+    ports: { rest: silent.port, soap: silent.port, remote: silent.port },
+    timings: { ...TIMINGS, descriptionTimeout: 30, descriptionBudget: 400 },
+  });
+  assert.equal(await client.findControlPath(), undefined);
+  assert.ok(silent.seen.length > 0);
+  assert.ok(silent.seen.every((s) => s.ua === OWN_USER_AGENT));
+});
+
+test('control URL: after a 200 to the own User-Agent, a 500 on another file is not a refusal', async (t) => {
+  const upnp = await fakeUpnp({ refuseOwn: 'mixed' });
+  t.after(() => upnp.close());
+  assert.equal(await clientFor(upnp.port).findControlPath(), CONTROL_PATH);
+  assert.ok(upnp.seen.every((s) => s.ua === OWN_USER_AGENT));
 });
 
 test('REST and SOAP requests never carry the Sky User-Agent', async (t) => {

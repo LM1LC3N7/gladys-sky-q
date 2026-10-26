@@ -41,6 +41,7 @@ import { FileStore, emptyData } from './store.js';
 const BUTTON_BY_FEATURE = new Map(BUTTONS.map((b) => [b.feature, b]));
 /** After these, the playback and channel are read again (follow-up reads). */
 const FOLLOWED = new Set([
+  FEATURES.KEY,
   FEATURES.WAKE,
   FEATURES.STANDBY,
   FEATURES.CHANNEL,
@@ -110,6 +111,8 @@ export class SkyApp {
     this.descriptionNext = new Map();
     /** serial -> tail of the command queue */
     this.queues = new Map();
+    /** serial -> { at (monotonic), on } of the last wake-up or standby sent */
+    this.toggleGuards = new Map();
     /** serial -> monotonic due times of the follow-up reads */
     this.followUps = new Map();
     /** serials of the devices created in Gladys */
@@ -239,6 +242,7 @@ export class SkyApp {
       }
       this.backgroundTimers.clear();
       this.followUps.clear();
+      this.toggleGuards.clear();
       if (this.persistTimer) {
         this.timers.clearTimeout(this.persistTimer);
         this.persistTimer = undefined;
@@ -589,8 +593,35 @@ export class SkyApp {
       return undefined;
     }
     this.readings.set(box.serial, { reading, at: this.monotonic() });
+    this.checkToggleGuard(box, reading.on);
     await this.publishStates(box, reading);
     return reading;
+  }
+
+  /**
+   * The guard of a wake-up or standby sent: while it lives, neither is sent
+   * again (a box applies a key a few seconds later: a second toggle read on
+   * the old state would undo the first). Lifted by a read showing the state
+   * changed, or by time (`toggleGuard`, monotonic).
+   */
+  toggleGuardAlive(box, mono = this.monotonic()) {
+    const guard = this.toggleGuards.get(box.serial);
+    if (!guard) {
+      return false;
+    }
+    if (mono - guard.at >= this.timings.toggleGuard) {
+      this.toggleGuards.delete(box.serial);
+      return false;
+    }
+    return true;
+  }
+
+  /** A read power state (`on`) that differs from the one the guard was set on lifts it. */
+  checkToggleGuard(box, on) {
+    const guard = this.toggleGuards.get(box.serial);
+    if (guard && on !== undefined && on !== guard.on) {
+      this.toggleGuards.delete(box.serial);
+    }
   }
 
   /**
@@ -668,7 +699,8 @@ export class SkyApp {
       }
       let path;
       try {
-        path = await client.findControlPath();
+        // Its own budget (descriptionBudget), not the rest of the round's.
+        path = await (this.clients.get(box.serial) ?? client).findControlPath();
       } catch (err) {
         this.logger.debug?.(`Sky Q ${box.serial}: no UPnP description (${err.message})`);
       }
@@ -703,10 +735,14 @@ export class SkyApp {
     }
   }
 
-  /** A SOAP failure: the control URL is searched again at the next round (an HTTP error). */
+  /**
+   * A SOAP failure: on an HTTP error, the control URL is searched again,
+   * but not before `descriptionRetry` (never a search at every round).
+   */
   soapFailed(box, client, err) {
     if (err.kind === ERROR_KINDS.HTTP) {
       client.shared.controlPath = undefined;
+      this.descriptionNext.set(box.serial, this.monotonic() + this.timings.descriptionRetry);
     }
     this.logger.debug?.(`Sky Q ${box.serial}: SOAP read failed (${err.message})`);
   }
@@ -879,11 +915,19 @@ export class SkyApp {
       }
       box.deviceType = system.deviceType;
       before = system.standby;
+      if (before !== undefined) {
+        this.checkToggleGuard(box, !before);
+      }
     }
     if (NO_TRANSPORT_TYPES.has(box.deviceType ?? '')) {
       // pyskyqremote / the Home Assistant integration send no key to these types.
       throw nothingSent(
         `Sky Q ${box.serial}: this kind of box (${box.deviceType}) takes no remote key`,
+      );
+    }
+    if ((key === FEATURES.WAKE || key === FEATURES.STANDBY) && this.toggleGuardAlive(box)) {
+      throw nothingSent(
+        `Sky Q ${box.serial}: the previous wake-up or standby is not seen applied yet (retry in a few seconds)`,
       );
     }
     if (key === FEATURES.WAKE) {
@@ -906,7 +950,19 @@ export class SkyApp {
       // The power key is a toggle: sent only on a box read on just now.
       keys = ['power'];
     }
-    await this.sendSequence(box, client, keys, started);
+    const toggles = key === FEATURES.WAKE || key === FEATURES.STANDBY;
+    if (toggles) {
+      // Set before the first byte: a key that may have left is guarded.
+      this.toggleGuards.set(box.serial, { at: this.monotonic(), on: before === false });
+    }
+    try {
+      await this.sendSequence(box, client, keys, started);
+    } catch (err) {
+      if (toggles && err.sent === false) {
+        this.toggleGuards.delete(box.serial);
+      }
+      throw err;
+    }
     this.afterCommand(box, key, value, before);
   }
 

@@ -214,6 +214,26 @@ export function tagText(xml, name) {
 
 // --- UPnP / SOAP ------------------------------------------------------------------
 
+/** Constructs a box never needs: refused, never read around. */
+const HOSTILE_XML = /<!DOCTYPE|<!ENTITY|<!--|<!\[CDATA\[|<\?xml-stylesheet/i;
+const MAX_REFERENCES = 200;
+
+/** Throws on XML with a DOCTYPE, an entity declaration, a comment, a CDATA or too many references. */
+export function assertPlainXml(xml) {
+  const text = String(xml ?? '');
+  if (HOSTILE_XML.test(text)) {
+    throw new Error('XML construct refused');
+  }
+  let count = 0;
+  for (let i = text.indexOf('&'); i !== -1; i = text.indexOf('&', i + 1)) {
+    count += 1;
+    if (count > MAX_REFERENCES) {
+      throw new Error('too many XML references');
+    }
+  }
+  return text;
+}
+
 export const SKY_PLAY_SERVICE_ID = 'urn:nds-com:serviceId:SkyPlay';
 const SKY_PLAY_URN = 'urn:schemas-nds-com:service:SkyPlay:2';
 const MAX_SERVICES = 32;
@@ -225,7 +245,12 @@ const CONTROL_PATH = /^\/(?!\/)[A-Za-z0-9._~/-]{0,200}$/;
  * used on the box's own address and port only, never as a full URL.
  */
 export function parseDescription(xml) {
-  const body = String(xml ?? '');
+  let body;
+  try {
+    body = assertPlainXml(xml);
+  } catch {
+    return undefined;
+  }
   const deviceType = tagText(body, 'deviceType');
   if (!deviceType || !deviceType.includes('SkyControl')) {
     return undefined;
@@ -267,6 +292,7 @@ export const soapAction = (action) => `"${SKY_PLAY_URN}#${action}"`;
 
 /** The answer element of `action`, or throws (another service, a fault...). */
 export function soapResponse(xml, action) {
+  assertPlainXml(xml);
   const inner = tagText(xml, `${action}Response`);
   if (inner === undefined) {
     throw new Error(`no ${action}Response`);

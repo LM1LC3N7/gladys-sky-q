@@ -12,7 +12,7 @@ export const FEATURES = Object.freeze({
   POWER: 'power',
   /** Read only: 1 the box answers on the network (on or in standby), 0 not. */
   ONLINE: 'online',
-  /** Push buttons: the power key, sent only when the box is in the opposite state. */
+  /** Push buttons, sent only on a state read just before, guarded until seen applied. */
   WAKE: 'wake',
   STANDBY: 'standby',
   /** The channel number: read back while live TV is shown; writing it types the digits. */
@@ -23,7 +23,7 @@ export const FEATURES = Object.freeze({
   DISK: 'disk',
   /** Read only: MUSIC_PLAYBACK_STATE (1 playing, 0 paused, 2 idle). */
   PLAYBACK: 'playback',
-  /** Dropdown of every remote key (the raw power toggle included). */
+  /** Dropdown of the remote keys, never the power key. */
   KEY: 'key',
 });
 
@@ -71,9 +71,11 @@ export const KEY_CODES = Object.freeze({
   sky: 241,
 });
 
-/** Labels of the "Remote key" dropdown, in the order shown. */
+/**
+ * Labels of the "Remote key" dropdown, in the order shown. Never the power
+ * key: that toggle leaves only through the guarded Standby button.
+ */
 export const KEY_LABELS = Object.freeze({
-  power: 'Power (toggle, state not read)',
   sky: 'Sky',
   tvguide: 'TV guide / Home',
   services: 'Services / Search',
@@ -180,6 +182,8 @@ export const TIMINGS = Object.freeze({
   keyGap: 300,
   /** The time one key of a sequence is counted for before it is started. */
   keyEstimate: 250,
+  /** A wake-up or standby sent blocks the next one until the state is seen changed, or this long. */
+  toggleGuard: 30_000,
   /** The follow-up reads after a command (state confirmation). */
   followUps: Object.freeze([5_000, 20_000]),
   /** The channel list is read again (at most) this often when a channel is unknown. */
