@@ -2,7 +2,8 @@
 // What the integration keeps across restarts in /data (the one writable
 // volume): the known boxes by serial number (address, model) and the time of
 // the last read round, so that a restart never reads sooner than the
-// interval. No secret: a box needs none. One write at a time, through a
+// interval, and the guard of a wake-up or standby just sent (wall-clock time
+// and duration), so that a restart does not forget it. No secret: a box needs none. One write at a time, through a
 // temporary file and a rename.
 //
 // A file that exists but cannot be read is never overwritten (`problem:
@@ -14,7 +15,7 @@ import { readFileSync, renameSync, statSync } from 'node:fs';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-export const emptyData = () => ({ boxes: {}, lastAttemptAt: undefined });
+export const emptyData = () => ({ boxes: {}, lastAttemptAt: undefined, toggleGuards: {} });
 const MAX_BYTES = 256 * 1024;
 const SERIAL = /^[A-Za-z0-9-]{4,40}$/;
 
@@ -28,6 +29,22 @@ function sanitize(raw) {
           host: typeof box.host === 'string' ? box.host.slice(0, 253) : '',
           model: typeof box.model === 'string' ? box.model.slice(0, 64) : undefined,
         };
+      }
+    }
+  }
+  const guards = raw?.toggleGuards;
+  if (guards && typeof guards === 'object') {
+    for (const [serial, guard] of Object.entries(guards)) {
+      if (
+        SERIAL.test(serial) &&
+        guard &&
+        Number.isFinite(guard.wallAt) &&
+        Number.isFinite(guard.ms) &&
+        guard.ms > 0 &&
+        guard.ms <= 10 * 60_000 &&
+        typeof guard.on === 'boolean'
+      ) {
+        data.toggleGuards[serial] = { wallAt: guard.wallAt, ms: guard.ms, on: guard.on };
       }
     }
   }

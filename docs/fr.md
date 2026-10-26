@@ -95,7 +95,11 @@ DHCP, ne reçoit pas de touche à une adresse où un autre décodeur répond).
   qu'une lecture n'a pas montré l'état changé, ou pendant 30 s (un décodeur
   applique une touche une ou deux secondes plus tard : une seconde bascule lue
   sur l'ancien état déferait la première). Entre-temps, ils sont refusés
-  (« not seen applied yet: nothing sent »).
+  (« not seen applied yet (retry in up to 30 s): nothing sent »). La garde est
+  gardée dans `/data` avec son heure murale : après un redémarrage de
+  l'intégration, elle est active si elle a moins de 30 s, ou si l'horloge
+  semble avoir reculé. Si `/data` est illisible, ils sont refusés (« /data
+  cannot be read ... : nothing sent ») tant qu'il ne l'est pas.
 - Entre la lecture de l'état et la touche, la poignée de main de la
   télécommande prend un instant (jusqu'à 1,5 s) : un changement fait à ce
   moment avec la télécommande Sky n'est pas vu.
@@ -165,8 +169,9 @@ que quand elle est due : jamais plus tôt que l'intervalle de rafraîchissement.
 ## Ce que l'intégration garde
 
 Dans son dossier de données (`/data/sky-q.json`) : les décodeurs connus
-(numéro de série, adresse, modèle) et l'heure de la dernière lecture, pour
-qu'un redémarrage ne lise pas plus tôt que l'intervalle. Aucun mot de passe :
+(numéro de série, adresse, modèle), l'heure de la dernière lecture, pour
+qu'un redémarrage ne lise pas plus tôt que l'intervalle, et la garde d'un
+réveil ou d'une mise en veille qui vient de partir. Aucun mot de passe :
 un décodeur n'en demande pas.
 
 ## Limites de ce premier jalon

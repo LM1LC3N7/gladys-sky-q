@@ -25,4 +25,4 @@ the notes of the version's GitHub Release.
   box's own description files after an explicit HTTP refusal of the
   integration's own one.
 - A wake-up or standby blocks the next one until the state is seen changed
-  (or 30 s); the power key is not in the remote key dropdown.
+  (or 30 s), kept in /data across a restart; the power key is not in the remote key dropdown.

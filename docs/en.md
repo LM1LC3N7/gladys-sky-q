@@ -86,7 +86,11 @@ moved by DHCP, gets no key at an address where another box answers).
 - After a wake-up or a standby, neither is sent again until a read shows the
   state changed, or for 30 s (a box applies a key a second or two later: a
   second toggle read on the old state would undo the first). Meanwhile they
-  are refused ("not seen applied yet: nothing sent").
+  are refused ("not seen applied yet (retry in up to 30 s): nothing sent").
+  The guard is kept in `/data` with its wall-clock time: after a restart of
+  the integration it is alive if it is under 30 s old, or if the clock seems
+  to have been set back. If `/data` cannot be read, they are refused ("/data
+  cannot be read ...: nothing sent") until it can.
 - Between the read of the state and the key, the handshake of the remote
   takes a moment (up to 1.5 s): a change made in that moment with the Sky
   remote is not seen.
@@ -149,8 +153,8 @@ refresh interval.
 ## What the integration keeps
 
 In its data folder (`/data/sky-q.json`): the known boxes (serial number,
-address, model) and the time of the last read, so that a restart does not
-read sooner than the interval. No password: a box needs none.
+address, model), the time of the last read, so that a restart does not
+read sooner than the interval, and the guard of a wake-up or standby just sent. No password: a box needs none.
 
 ## Limits of this first milestone
 

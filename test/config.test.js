@@ -35,7 +35,9 @@ test('/data: missing is empty; invalid JSON moved aside; unreadable never overwr
   const dir = await mkdtemp(join(tmpdir(), 'sky-q-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const store = new FileStore({ dir });
-  assert.deepEqual(store.load(), { data: { boxes: {}, lastAttemptAt: undefined } });
+  assert.deepEqual(store.load(), {
+    data: { boxes: {}, lastAttemptAt: undefined, toggleGuards: {} },
+  });
   await store.save({
     boxes: { ABCD1234: { serial: 'ABCD1234', host: '10.0.0.1' } },
     lastAttemptAt: 5,

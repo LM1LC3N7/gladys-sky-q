@@ -113,6 +113,8 @@ export class SkyApp {
     this.queues = new Map();
     /** serial -> { at (monotonic), on } of the last wake-up or standby sent */
     this.toggleGuards = new Map();
+    /** /data was unreadable: a guard may exist there; toggles are refused until it is read */
+    this.guardsUnknown = false;
     /** serial -> monotonic due times of the follow-up reads */
     this.followUps = new Map();
     /** serials of the devices created in Gladys */
@@ -162,6 +164,7 @@ export class SkyApp {
     if (loaded.problem) {
       this.logger.warn(`/data/sky-q.json: ${loaded.problem}`);
     }
+    this.guardsUnknown = loaded.problem === 'unreadable';
     // The last round before a restart: the next one never comes sooner than
     // the interval (a date in the future is brought to now).
     const at = this.now();
@@ -204,6 +207,7 @@ export class SkyApp {
   async doStart(raw) {
     this.config = normalizeConfig(raw);
     this.load();
+    this.restoreGuards();
     this.running = true;
     // Republished after a (re)connection: Gladys may not hold it any more.
     this.lastStatus = undefined;
@@ -605,12 +609,15 @@ export class SkyApp {
    * changed, or by time (`toggleGuard`, monotonic).
    */
   toggleGuardAlive(box, mono = this.monotonic()) {
+    if (this.guardsUnknown && !this.rereadGuards()) {
+      return true;
+    }
     const guard = this.toggleGuards.get(box.serial);
     if (!guard) {
       return false;
     }
     if (mono - guard.at >= this.timings.toggleGuard) {
-      this.toggleGuards.delete(box.serial);
+      this.dropGuard(box.serial);
       return false;
     }
     return true;
@@ -620,8 +627,72 @@ export class SkyApp {
   checkToggleGuard(box, on) {
     const guard = this.toggleGuards.get(box.serial);
     if (guard && on !== undefined && on !== guard.on) {
-      this.toggleGuards.delete(box.serial);
+      this.dropGuard(box.serial);
     }
+  }
+
+  /** The guard set before the first key byte, in memory and in /data (wall-clock time). */
+  async setGuard(box, on) {
+    this.toggleGuards.set(box.serial, { at: this.monotonic(), on });
+    if (this.data) {
+      this.data.toggleGuards ??= {};
+      this.data.toggleGuards[box.serial] = {
+        wallAt: this.now(),
+        ms: this.timings.toggleGuard,
+        on,
+      };
+      await this.save().catch((err) => {
+        this.logger.warn(`Could not save /data: ${err.message}`);
+      });
+    }
+  }
+
+  dropGuard(serial) {
+    this.toggleGuards.delete(serial);
+    if (this.data?.toggleGuards?.[serial]) {
+      delete this.data.toggleGuards[serial];
+      this.persist();
+    }
+  }
+
+  /**
+   * The guards kept in /data, back after a restart. The monotonic clock does
+   * not survive one: a guard younger than its duration on the wall clock is
+   * alive, and so is one whose wall clock seems to have gone back (its age is
+   * unknown: a whole duration from now).
+   */
+  restoreGuards() {
+    const wall = this.now();
+    const mono = this.monotonic();
+    for (const [serial, saved] of Object.entries(this.data?.toggleGuards ?? {})) {
+      if (this.toggleGuards.has(serial)) {
+        continue;
+      }
+      const age = wall - saved.wallAt;
+      if (age >= saved.ms) {
+        delete this.data.toggleGuards[serial];
+        continue;
+      }
+      this.toggleGuards.set(serial, { at: mono - Math.max(0, age), on: saved.on });
+    }
+  }
+
+  /** /data read again after it was unreadable; true once it is. */
+  rereadGuards() {
+    let loaded;
+    try {
+      loaded = this.store.load();
+    } catch {
+      return false;
+    }
+    if (loaded.problem === 'unreadable') {
+      return false;
+    }
+    this.data = loaded.data;
+    this.storeProblem = loaded.problem;
+    this.guardsUnknown = false;
+    this.restoreGuards();
+    return true;
   }
 
   /**
@@ -927,7 +998,9 @@ export class SkyApp {
     }
     if ((key === FEATURES.WAKE || key === FEATURES.STANDBY) && this.toggleGuardAlive(box)) {
       throw nothingSent(
-        `Sky Q ${box.serial}: the previous wake-up or standby is not seen applied yet (retry in a few seconds)`,
+        this.guardsUnknown
+          ? `Sky Q ${box.serial}: /data cannot be read, so a recent wake-up or standby cannot be ruled out (retry later)`
+          : `Sky Q ${box.serial}: the previous wake-up or standby is not seen applied yet (retry in up to 30 s)`,
       );
     }
     if (key === FEATURES.WAKE) {
@@ -953,13 +1026,13 @@ export class SkyApp {
     const toggles = key === FEATURES.WAKE || key === FEATURES.STANDBY;
     if (toggles) {
       // Set before the first byte: a key that may have left is guarded.
-      this.toggleGuards.set(box.serial, { at: this.monotonic(), on: before === false });
+      await this.setGuard(box, before === false);
     }
     try {
       await this.sendSequence(box, client, keys, started);
     } catch (err) {
       if (toggles && err.sent === false) {
-        this.toggleGuards.delete(box.serial);
+        this.dropGuard(box.serial);
       }
       throw err;
     }

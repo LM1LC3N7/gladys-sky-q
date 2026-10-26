@@ -514,6 +514,96 @@ test('a wake-up or standby never seen applied: the guard ends after 30 s', async
   assert.deepEqual(net.keyNames(), ['power', 'power']);
 });
 
+test('the guard ends by the follow-up read seeing the state changed, alone', async () => {
+  const box = createBox({ applyDelay: 2 * SECOND });
+  const { app, net, command, wait } = await setup({ boxes: [box] });
+  assert.equal((await command('standby')).success, true);
+  assert.ok(app.toggleGuards.has(SERIAL));
+  await wait(4 * SECOND);
+  assert.ok(app.toggleGuards.has(SERIAL), 'no read yet since the box applied the key');
+  await wait(2 * SECOND); // the follow-up read at 5 s: no command read it
+  assert.equal(app.toggleGuards.has(SERIAL), false);
+  assert.deepEqual(app.data.toggleGuards, {});
+  assert.deepEqual(net.keyNames(), ['power']);
+});
+
+test('the guard ends by the state read of a command seeing the state changed, alone', async () => {
+  const box = createBox({ applyDelay: 2 * SECOND });
+  const { app, net, command, wait } = await setup({ boxes: [box] });
+  assert.equal((await command('standby')).success, true);
+  await wait(3 * SECOND); // applied, before the follow-up read (5 s)
+  assert.ok(app.toggleGuards.has(SERIAL));
+  assert.equal((await command('wake')).success, true);
+  assert.deepEqual(net.keyNames(), ['power', 'tvguide', 'backup']);
+});
+
+test('the guard ends by its time only: refused at 29 s, sent at 31 s', async () => {
+  const box = createBox({ applyKeys: false });
+  const { app, net, command, wait } = await setup({ boxes: [box] });
+  assert.equal((await command('standby')).success, true);
+  await wait(19 * SECOND); // before the follow-up read at 20 s
+  await wait(10 * SECOND - 600);
+  assert.match((await command('standby')).error, /not seen applied yet \(retry in up to 30 s\)/);
+  await wait(2 * SECOND);
+  assert.equal((await command('standby')).success, true);
+  assert.deepEqual(net.keyNames(), ['power', 'power']);
+  assert.deepEqual(Object.keys(app.data.toggleGuards), [SERIAL], 'the new guard is in /data');
+});
+
+test('a restart between two standby on a slow box: one power key only', async () => {
+  const store = new MemoryStore();
+  const first = await setup({ store, boxes: [createBox({ applyKeys: false })] });
+  assert.equal((await first.command('standby')).success, true);
+  await first.wait(3 * SECOND);
+  await first.app.stop();
+  assert.deepEqual(Object.keys(store.data.toggleGuards), [SERIAL]);
+  const second = await setup({ store, boxes: [createBox()], now: first.clock.now + 2 * SECOND });
+  assert.match((await second.command('standby')).error, /not seen applied yet.*nothing sent/);
+  assert.deepEqual(second.net.keyNames(), []);
+  await second.wait(30 * SECOND);
+  assert.equal((await second.command('standby')).success, true);
+  assert.deepEqual(second.net.keyNames(), ['power']);
+});
+
+test('a guard older than 30 s on the wall clock does not survive a restart', async () => {
+  const store = new MemoryStore();
+  const first = await setup({ store, boxes: [createBox({ applyKeys: false })] });
+  assert.equal((await first.command('standby')).success, true);
+  await first.app.stop();
+  const second = await setup({ store, now: first.clock.now + 31 * SECOND });
+  assert.equal((await second.command('standby')).success, true);
+  assert.deepEqual(second.net.keyNames(), ['power']);
+});
+
+test('a restart with the wall clock set back: the guard stays alive for its duration', async () => {
+  const store = new MemoryStore();
+  const first = await setup({ store, boxes: [createBox({ applyKeys: false })] });
+  assert.equal((await first.command('standby')).success, true);
+  await first.app.stop();
+  const second = await setup({ store, now: first.clock.now - 10 * MINUTE });
+  assert.match((await second.command('standby')).error, /not seen applied yet/);
+  await second.wait(31 * SECOND);
+  assert.equal((await second.command('standby')).success, true);
+});
+
+test('/data unreadable: wake-up and standby refused until it is read again', async () => {
+  const store = new MemoryStore(emptyData(), { problem: 'unreadable' });
+  const { net, command, wait } = await setup({ store });
+  assert.match((await command('standby')).error, /\/data cannot be read.*nothing sent/);
+  await wait(60 * SECOND);
+  assert.match((await command('wake')).error, /\/data cannot be read.*nothing sent/);
+  assert.deepEqual(net.keyNames(), []);
+  // Read again, with a guard on it: still guarded.
+  const data = emptyData();
+  data.toggleGuards[SERIAL] = { wallAt: T0 + 60 * SECOND, ms: 30 * SECOND, on: false };
+  store.data = data;
+  store.problem = undefined;
+  assert.match((await command('standby')).error, /not seen applied yet/);
+  await wait(31 * SECOND);
+  assert.equal((await command('standby')).success, true);
+  assert.deepEqual(net.keyNames(), ['power']);
+});
+
 test('the remote key dropdown never sends the power toggle', async () => {
   const { net, command } = await setup();
   const option = boxDevice().features.find((f) => f.external_id === id('key')).supported_options;

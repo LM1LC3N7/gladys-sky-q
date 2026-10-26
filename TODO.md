@@ -35,6 +35,10 @@ up to date at the end of every milestone.
     channel typed needs a "select" after its digits on some firmware;
   - the time a key takes on a real box: the 3.5 s budget and the 300 ms gap
     between digits (the library waits 500 ms).
+  - known trade-off (review r2): a box that requires the Sky User-Agent and
+    answers 404 to the own one is never read (its description files, hence its
+    control URL and channel list, are never published); to confirm on a real
+    box. The code stays as is.
 - [ ] **Milestone 3 — more**: the current application (WebSocket
       `ws://<box>:9006/as/apps/status`), recordings list and management
       (keep, lock, delete behind an option, book), the SSDP `keywords` and
