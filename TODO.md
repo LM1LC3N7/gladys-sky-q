@@ -74,10 +74,11 @@ up to date at the end of every milestone.
 - Version 0.1.0 in `package.json`, `package-lock.json`, the manifest and the
   `docker_image` tag, set by hand at milestone 1 (the template's 1.0.0 was
   someone else's). The first patch release gives 0.1.1.
-- SDK `^0.15.0`: the latest published on npm (0.16.0 is tagged on GitHub,
-  not published).
-- Manifest: `gladys_version` `>=5.1.0`, category `multimedia`, no `keywords`
-  nor `countries` (they need a newer minimum version: milestone 3).
+- **SDK `^0.16.0`** (2026-10-27, migration wave 3): 0.16.0 is on npm since
+  2026-10-25 (a stale npm cache said otherwise); it adds the ai, tts and music
+  types; no effect here (`poll_frequency` unused). `keywords`, `countries`
+  and `gladys_version >= 5.3.0` wait until Gladys 5.3 is widespread.
+- Manifest: `gladys_version` `>=5.1.0`, category `multimedia`.
 - External ids: `gladys.externalIds('box', <serialNumber>)`, never the
   address. A serial is 4 to 40 letters, digits or dashes; a box answering
   without one is not added (status note). Feature keys are frozen: `power`,
