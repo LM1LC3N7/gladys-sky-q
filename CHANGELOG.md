@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-27
+
 ### Changed
 
 - Integration SDK 0.16 (no change for the devices).
@@ -33,5 +35,6 @@ the notes of the version's GitHub Release.
 - A wake-up or standby blocks the next one until the state is seen changed
   (or 30 s), kept in /data across a restart; the power key is not in the remote key dropdown.
 
-[Unreleased]: https://github.com/LM1LC3N7/gladys-sky-q/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/LM1LC3N7/gladys-sky-q/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/LM1LC3N7/gladys-sky-q/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/LM1LC3N7/gladys-sky-q/releases/tag/v0.1.1

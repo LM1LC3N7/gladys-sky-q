@@ -1,6 +1,6 @@
 {
   "name": "gladys-sky-q",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Gladys Assistant external integration for Sky Q set-top boxes (standby, wake-up, channel, play, pause, remote keys, recordings disk), over their local REST, UPnP/SOAP and remote control ports. Unofficial, not affiliated with Sky.",
   "type": "module",
